@@ -24,26 +24,29 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     // 현재 연결된 모든 사용자들의 세션을 저장하는 집합
     private final Set<WebSocketSession> sessions = new HashSet<>();
 
+    // 연결
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         log.info("{} 연결됨",session.getId());
-        sessions.add(session);
-        session.sendMessage(new TextMessage("WebSocket 연결 완료"));
+        sessions.add(session); // 새로운 사용자를 접속자 목록에 추가
+        session.sendMessage(new TextMessage("WebSocket 연결 완료")); // 연결된 사용자에게 환영 메시지 전송
     }
 
+    // 메시지 처리
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        String payload = message.getPayload();
+        String payload = message.getPayload(); // 받은 매시지의 실제 내용
         log.info("payload {}",payload);
 
-        for (WebSocketSession s : sessions) {
+        for (WebSocketSession s : sessions) { // 모든 접속자에게 메시지 전달(브로드캐스팅)
             s.sendMessage(new TextMessage(payload));
         }
     }
 
+    // 연결 종료
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         log.info("{} 연결 끊김",session.getId());
-        sessions.remove(session);
+        sessions.remove(session); // 접속자 목록에서 해당 사용자 제거
     }
 }
