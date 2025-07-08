@@ -1,6 +1,10 @@
 package com.ssafy.websocket.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssafy.websocket.dto.ChatMessageDto;
+import com.ssafy.websocket.dto.ChatMessageDto.MeetingType;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,6 +28,9 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     // 현재 연결된 모든 사용자들의 세션을 저장하는 집합
     private final Set<WebSocketSession> sessions = new HashSet<>();
 
+    // 채팅방ID와 해당 방에 접속한 사용자들의 세션 집합
+    private final Map<Long, Set<WebSocketSession>> chatRoomSessionMap = new HashMap<>();
+
     // 연결
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -38,8 +45,21 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
         String payload = message.getPayload(); // 받은 매시지의 실제 내용
         log.info("payload {}",payload);
 
-        for (WebSocketSession s : sessions) { // 모든 접속자에게 메시지 전달(브로드캐스팅)
-            s.sendMessage(new TextMessage(payload));
+        // 클라이언트로부터 받은 메시지를 ChatMessageDto로 변환
+        ChatMessageDto chatMessageDto = objectMapper.readValue(payload, ChatMessageDto.class);
+        log.info("chatMessageDto {}", chatMessageDto.toString());
+
+        // 메시지 타입에 따른 분기
+        if(chatMessageDto.getMeetingType().equals(MeetingType.JOIN)){
+            chatRoomSessionMap.computeIfAbsent(chatMessageDto.getChatRoomId(), s -> new HashSet<>()).add(session);
+            chatMessageDto.setMessage("님이 입장하셨습니다.");
+        }else if (chatMessageDto.getMeetingType().equals(MeetingType.LEAVE)){
+            chatRoomSessionMap.remove(chatMessageDto.getChatRoomId()).remove(session);
+            chatMessageDto.setMessage("님이 퇴장하셨습니다.");
+        }
+
+        for(WebSocketSession webSocketSession : chatRoomSessionMap.get(chatMessageDto.getChatRoomId())){
+            webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(chatMessageDto)));
         }
     }
 
@@ -48,5 +68,10 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         log.info("{} 연결 끊김",session.getId());
         sessions.remove(session); // 접속자 목록에서 해당 사용자 제거
+
+        // 모든 채팅방에서 해당 세션 제거
+        for (Set<WebSocketSession> roomSessions : chatRoomSessionMap.values()) {
+            roomSessions.remove(session);
+        }
     }
 }
