@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket 채팅 테스트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>🚀 WebSocket 실시간 채팅</h1>
+
+<!-- 사용자 정보 -->
+<div class="container">
+  <h3>👤 사용자 정보</h3>
+  <div class="alert alert-info">
+    💡 채팅을 시작하기 전에 먼저 사용자 이름을 입력해주세요!<br>
+    🌐 같은 IP에서는 하나의 연결만 가능합니다. (다른 곳에서 접속 시 기존 연결이 종료됩니다)
+  </div>
+  <div class="input-group">
+    <label>사용자 이름: <span style="color: red;">*필수</span></label>
+    <input type="text" id="username" placeholder="이름을 입력하세요 (예: 김철수)" class="username-input" style="flex: 1;" required>
+  </div>
+  <div class="alert alert-danger" id="usernameError" style="display: none;">
+    ⚠️ 사용자 이름을 반드시 입력해야 서버에 연결할 수 있습니다!
+  </div>
+</div>
+
+<!-- 연결 상태 -->
+<div class="container">
+  <h3>🔗 서버 연결</h3>
+  <div id="status" class="status disconnected">연결되지 않음</div>
+  <div class="input-group">
+    <label>서버 URL:</label>
+    <input type="text" id="serverUrl" value="ws://43.203.151.50:8080/ws/conn" style="flex: 1;">
+    <button id="connectBtn" onclick="connect()">연결</button>
+    <button id="disconnectBtn" onclick="disconnect()" disabled>연결 해제</button>
+  </div>
+</div>
+
+<!-- 채팅방 관리 -->
+<div class="container">
+  <h3>🏠 채팅방 관리</h3>
+  <div class="alert alert-warning" id="roomWarning" style="display: none;">
+    ⚠️ 현재 다른 채팅방에 입장 중입니다. 새로운 방에 입장하려면 먼저 현재 방에서 퇴장해주세요.
+  </div>
+  <div class="input-group">
+    <label>채팅방 ID:</label>
+    <input type="number" id="chatRoomId" value="1" min="1">
+    <button id="joinBtn" onclick="joinRoom()" disabled>입장</button>
+    <button id="leaveBtn" onclick="leaveRoom()" disabled>퇴장</button>
+  </div>
+  <div class="status-info">
+    <strong>현재 채팅방:</strong> <span id="currentRoom">없음</span><br>
+    <strong>참여 인원:</strong> <span id="roomCount">0명</span>
+  </div>
+</div>
+
+<!-- 메시지 -->
+<div class="container">
+  <h3>💬 채팅</h3>
+  <div class="alert alert-info">
+    📝 메시지는 최대 200자까지 입력 가능하며, 연속으로 50개 이상 보내면 전송이 제한됩니다.<br>
+    🔌 연결이 해제되면 입장했던 모든 채팅방에서 자동으로 퇴장됩니다.
+  </div>
+  <div id="messages" class="messages">
+    <div class="message system-message">
+      <div class="message-bubble">
+        채팅을 시작하려면 사용자 이름 입력 → 서버 연결 → 채팅방 입장 순서로 진행하세요!
+      </div>
+    </div>
+  </div>
+  <div class="message-input-container">
+    <div class="input-group">
+      <input type="text" id="messageInput" placeholder="메시지를 입력하세요... (최대 200자)" style="flex: 1;" disabled maxlength="200">
+      <span class="char-counter" id="charCounter">0/200</span>
+      <button id="sendBtn" onclick="sendMessage()" disabled>전송</button>
+    </div>
+    <div class="message-length-warning" id="lengthWarning" style="display: none;"></div>
+  </div>
+  <button onclick="clearMessages()">메시지 지우기</button>
+</div>
+
+<!-- 로그 -->
+<div class="container">
+  <h3>📋 시스템 로그</h3>
+  <div id="logs" class="messages" style="height: 200px;"></div>
+  <button onclick="clearLogs()">로그 지우기</button>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
