@@ -20,12 +20,14 @@ public class SessionManager {
     private final Map<WebSocketSession, String> sessionUsernameMap = new ConcurrentHashMap<>();
 
     // 세션별 IP 주소 저장
-    private final Map<WebSocketSession, String> sessionIpMap = new ConcurrentHashMap<>();
+    private final Map<WebSocketSession, String> sessionIsMap = new ConcurrentHashMap<>();
 
     // 새로운 세션 등록 (IP 중복 체크)
-    public String registerSession(WebSocketSession session) throws Exception {
+    public WebSocketSession registerSession(WebSocketSession session) throws Exception {
         String clientIp = getClientIp(session);
         log.info("새 연결 시도: ID={}, IP={}", session.getId(), clientIp);
+
+        WebSocketSession removedSession = null;
 
         // IP 중복 체크
         WebSocketSession existingSession = isSessionMap.get(clientIp);
@@ -38,17 +40,18 @@ public class SessionManager {
 
             // 기존 세션 정리
             cleanupSession(existingSession);
+            removedSession = existingSession;
         }
         isSessionMap.put(clientIp, session);
-        sessionIpMap.put(session, clientIp);
+        sessionIsMap.put(session, clientIp);
 
-        return clientIp;
+        return removedSession;
     }
 
     // IP 주소 조회
     private String getClientIp(WebSocketSession session) {
         // 세션에 이미 저장된 IP가 있으면 반환
-        String storedIp = sessionIpMap.get(session);
+        String storedIp = sessionIsMap.get(session);
         if(storedIp != null) {
             return storedIp;
         }
@@ -63,9 +66,19 @@ public class SessionManager {
 
         // 모든 맵에서 세션 제거
         sessionUsernameMap.remove(session);
-        sessionIpMap.remove(session);
+        sessionIsMap.remove(session);
 
         // IP도 삭제
         isSessionMap.remove(clientIp);
+    }
+
+    // 사용자 이름 저장
+    public void setUsername(WebSocketSession session, String username) {
+        sessionUsernameMap.put(session, username);
+    }
+    
+    // 사용자 이름 조회
+    public String getUsername(WebSocketSession session) {
+        return sessionUsernameMap.get(session);
     }
 }

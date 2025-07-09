@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.websocket.dto.ChatMessageDto;
 import com.ssafy.websocket.dto.ChatMessageDto.MeetingType;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -13,9 +15,6 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.util.HashSet;
-import java.util.Set;
-
 @Slf4j
 @Component // Spring Bean으로 등록
 @RequiredArgsConstructor
@@ -23,6 +22,7 @@ import java.util.Set;
 public class WebsocketChatHandler extends TextWebSocketHandler {
     // Json -> Java 객체 변환 도구
     private final ObjectMapper objectMapper;
+    private final SessionManager sessionManager;
 
     // 현재 연결된 모든 사용자들의 세션을 저장하는 집합
     private final Set<WebSocketSession> sessions = new HashSet<>();
@@ -33,10 +33,24 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     // 연결
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        log.info("새 연결: ID={}, IP={}", session.getId(), session.getRemoteAddress());
-        sessions.add(session); // 새로운 사용자를 접속자 목록에 추가
+        // 세션 등록 (IP 중복 체크)
+        WebSocketSession removedSession = sessionManager.registerSession(session);
+
+        // 중복 IP로 기존 세션이 제거된 경우
+        if (removedSession != null) {
+            // 전체 세션 목록에서 제거
+            sessions.remove(removedSession);
+            // 모든 채팅방에서 세션 제거
+            for (Set<WebSocketSession> roomSessions : chatRoomSessionMap.values()) {
+                roomSessions.remove(removedSession);
+            }
+        }
+
+        // 새로운 사용자를 접속자 목록에 추가
+        sessions.add(session);
         session.sendMessage(new TextMessage("WebSocket 연결 완료")); // 연결된 사용자에게 환영 메시지 전송
     }
+
 
     // 메시지 처리
     @Override
@@ -49,7 +63,10 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
         log.info("chatMessageDto {}", chatMessageDto.toString());
 
         // 메시지 타입에 따른 분기
-        if(chatMessageDto.getMeetingType().equals(MeetingType.JOIN)){
+        if (chatMessageDto.getMeetingType().equals(MeetingType.JOIN)) {
+            // 사용자 이름 저장
+            sessionManager.setUsername(session, chatMessageDto.getUsername());
+
             // 채팅방에 세션 추가
             chatRoomSessionMap.computeIfAbsent(chatMessageDto.getChatRoomId(), s -> new HashSet<>()).add(session);
 
@@ -61,7 +78,7 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
             // 방 인원 수 정보를 모든 사용자에게 전송
             sendRoomCountUpdate(chatMessageDto.getChatRoomId(), roomCount);
 
-        }else if (chatMessageDto.getMeetingType().equals(MeetingType.LEAVE)){
+        } else if (chatMessageDto.getMeetingType().equals(MeetingType.LEAVE)) {
             // 채팅방에서 세션 제거
             Set<WebSocketSession> roomSessions = chatRoomSessionMap.get(chatMessageDto.getChatRoomId());
 
@@ -70,18 +87,18 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
 
             if (roomSessions != null) {
                 roomSessions.remove(session);
+
+                log.info("사용자 {}가 채팅방 {}에서 퇴장", chatMessageDto.getUsername(), chatMessageDto.getChatRoomId());
+
+                // 방 인원 수 정보를 모든 사용자에게 전송
+                sendRoomCountUpdate(chatMessageDto.getChatRoomId(), roomCount);
             }
-
-            log.info("사용자 {}가 채팅방 {}에서 퇴장", chatMessageDto.getUsername(), chatMessageDto.getChatRoomId());
-
-            // 방 인원 수 정보를 모든 사용자에게 전송
-            sendRoomCountUpdate(chatMessageDto.getChatRoomId(), roomCount);
         }
 
         // 해당 채팅방의 모든 사용자에게 메시지 전송
         Set<WebSocketSession> roomSessions = chatRoomSessionMap.get(chatMessageDto.getChatRoomId());
         if (roomSessions != null) {
-            for(WebSocketSession webSocketSession : roomSessions){
+            for (WebSocketSession webSocketSession : roomSessions) {
                 try {
                     webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(chatMessageDto)));
                 } catch (Exception e) {
@@ -107,34 +124,26 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
                 sendRoomCountUpdate(entry.getKey(), roomCount);
             }
         }
+        sessionManager.cleanupSession(session);
     }
 
     // 방 인원 수 업데이트를 해당 방의 모든 사용자에게 전송
-    private void sendRoomCountUpdate(Long chatRoomId, int roomCount) {
+    private void sendRoomCountUpdate(Long chatRoomId, int roomCount) throws Exception {
         Set<WebSocketSession> roomSessions = chatRoomSessionMap.get(chatRoomId);
         if (roomSessions != null && !roomSessions.isEmpty()) {
-            try {
-                // 방 인원 수 정보 메시지 생성
-                Map<String, Object> roomCountMessage = new HashMap<>();
-                roomCountMessage.put("type", "ROOM_COUNT_UPDATE");
-                roomCountMessage.put("chatRoomId", chatRoomId);
-                roomCountMessage.put("count", roomCount);
+            // 방 인원 수 정보 메시지 생성
+            Map<String, Object> roomCountMessage = new HashMap<>();
+            roomCountMessage.put("type", "ROOM_COUNT_UPDATE");
+            roomCountMessage.put("chatRoomId", chatRoomId);
+            roomCountMessage.put("count", roomCount);
 
-                String jsonMessage = objectMapper.writeValueAsString(roomCountMessage);
+            String jsonMessage = objectMapper.writeValueAsString(roomCountMessage);
 
-                // 해당 방의 모든 사용자에게 전송
-                for (WebSocketSession session : roomSessions) {
-                    try {
-                        session.sendMessage(new TextMessage(jsonMessage));
-                    } catch (Exception e) {
-                        log.error("방 인원 수 전송 실패: {}", e.getMessage());
-                    }
-                }
-
-                log.info("방 인원 수 업데이트 전송 - Room: {}, Count: {}", chatRoomId, roomCount);
-            } catch (Exception e) {
-                log.error("방 인원 수 메시지 생성 실패: {}", e.getMessage());
+            // 해당 방의 모든 사용자에게 전송
+            for (WebSocketSession session : roomSessions) {
+                session.sendMessage(new TextMessage(jsonMessage));
             }
+            log.info("방 인원 수 업데이트 전송 - Room: {}, Count: {}", chatRoomId, roomCount);
         }
     }
 }
