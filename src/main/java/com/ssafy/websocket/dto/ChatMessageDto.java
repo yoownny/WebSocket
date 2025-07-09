@@ -14,6 +14,7 @@ import lombok.Setter;
 public class ChatMessageDto {
     private MeetingType meetingType; // 메시지 타입
     private Long chatRoomId; // 방 번호
+    private String username; // 사용자 이름
     private String message; // 메시지
 
     // 메시지 타입 : 입장, 채팅, 퇴장

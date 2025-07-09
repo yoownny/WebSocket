@@ -66,38 +66,100 @@
         }
 
         .message {
-            margin-bottom: 10px;
-            padding: 12px;
-            border-left: 4px solid #007bff;
-            background-color: white;
-            border-radius: 6px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            padding: 0;
+            background: none;
+            border: none;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
         }
 
         .system-message {
-            border-left-color: #28a745;
+            align-items: center;
+            text-align: center;
+        }
+
+        .system-message .message-bubble {
             background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 8px 15px;
+            border-radius: 15px;
             font-style: italic;
+            color: #6c757d;
+            display: inline-block;
         }
 
         .user-message {
-            border-left-color: #007bff;
+            margin-bottom: 10px;
+        }
+
+        .my-message {
+            align-items: flex-end;
+        }
+
+        .other-message {
+            align-items: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            word-wrap: break-word;
+            position: relative;
+        }
+
+        .my-message .message-bubble {
+            background-color: #007bff;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .other-message .message-bubble {
+            background-color: #e9ecef;
+            color: #333;
+            border-bottom-left-radius: 5px;
+        }
+
+        .message-header {
+            font-size: 0.85em;
+            margin-bottom: 2px;
+            color: #666;
+        }
+
+        .my-message .message-header {
+            text-align: right;
+        }
+
+        .other-message .message-header {
+            text-align: left;
+        }
+
+        .message-time {
+            font-size: 0.75em;
+            color: #999;
+            margin: 2px 5px;
+            align-self: flex-end;
+        }
+
+        .my-message .message-time {
+            margin-right: 0;
+        }
+
+        .other-message .message-time {
+            margin-left: 0;
+            align-self: flex-start;
         }
 
         .username {
             font-weight: bold;
-            color: #007bff;
-        }
-
-        .timestamp {
-            color: #666;
+            color: #495057;
             font-size: 0.9em;
-            float: right;
         }
 
-        .message-content {
-            margin-top: 5px;
-            clear: both;
+        .my-username {
+            color: #007bff;
         }
 
         input, button {
@@ -165,6 +227,15 @@
             color: #17a2b8;
         }
 
+        #roomCount {
+            background-color: #007bff;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+
         .alert {
             padding: 10px;
             border-radius: 5px;
@@ -217,7 +288,7 @@
     </div>
     <div class="status-info">
         <strong>현재 채팅방:</strong> <span id="currentRoom">없음</span><br>
-        <strong>접속 중인 사용자:</strong> <span id="currentUser">없음</span>
+        <strong>참여 인원:</strong> <span id="roomCount">0명</span>
     </div>
 </div>
 
@@ -226,8 +297,9 @@
     <h3>💬 채팅</h3>
     <div id="messages" class="messages">
         <div class="message system-message">
-            <div class="timestamp">시스템</div>
-            <div class="message-content">채팅을 시작하려면 사용자 이름 입력 → 서버 연결 → 채팅방 입장 순서로 진행하세요!</div>
+            <div class="message-bubble">
+                채팅을 시작하려면 사용자 이름 입력 → 서버 연결 → 채팅방 입장 순서로 진행하세요!
+            </div>
         </div>
     </div>
     <div class="input-group">
@@ -259,7 +331,7 @@
     const messagesDiv = document.getElementById('messages');
     const logsDiv = document.getElementById('logs');
     const currentRoomSpan = document.getElementById('currentRoom');
-    const currentUserSpan = document.getElementById('currentUser');
+    const roomCountSpan = document.getElementById('roomCount');
     const usernameInput = document.getElementById('username');
 
     // 엔터키로 메시지 전송
@@ -306,8 +378,15 @@
 
                 // JSON 메시지인지 확인
                 try {
-                    const messageDto = JSON.parse(data);
-                    displayMessage(messageDto);
+                    const messageData = JSON.parse(data);
+
+                    // 방 인원 수 업데이트 메시지인지 확인
+                    if (messageData.type === 'ROOM_COUNT_UPDATE') {
+                        updateRoomCount(messageData.count);
+                    } else {
+                        // 일반 채팅 메시지
+                        displayMessage(messageData);
+                    }
                 } catch (e) {
                     // 일반 텍스트 메시지 (연결 완료 메시지 등)
                     displayTextMessage(data);
@@ -353,16 +432,22 @@
             return;
         }
 
+        // 방이 바뀔 때마다 채팅 내용 지우기
+        if (currentChatRoomId !== chatRoomId) {
+            clearMessages();
+            displayTextMessage(`채팅방 ${chatRoomId}에 입장했습니다.`);
+        }
+
         const message = {
             meetingType: 'JOIN',
             chatRoomId: chatRoomId,
-            message: `${username}님이 입장하셨습니다.`
+            username: username, // userName → username 변경 (백엔드 수정에 맞춤)
+            message: '입장했습니다'
         };
 
         sendWebSocketMessage(message);
         currentChatRoomId = chatRoomId;
         currentRoomSpan.textContent = `방 ${chatRoomId}`;
-        currentUserSpan.textContent = username;
 
         leaveBtn.disabled = false;
         messageInput.disabled = false;
@@ -382,7 +467,8 @@
         const message = {
             meetingType: 'LEAVE',
             chatRoomId: currentChatRoomId,
-            message: `${username}님이 퇴장하셨습니다.`
+            username: username, // userName → username 변경
+            message: '퇴장했습니다'
         };
 
         sendWebSocketMessage(message);
@@ -391,7 +477,7 @@
 
         currentChatRoomId = null;
         currentRoomSpan.textContent = '없음';
-        currentUserSpan.textContent = '없음';
+        roomCountSpan.textContent = '0명';
 
         leaveBtn.disabled = true;
         messageInput.disabled = true;
@@ -421,7 +507,8 @@
         const message = {
             meetingType: 'TALK',
             chatRoomId: currentChatRoomId,
-            message: `${username}: ${messageText}`
+            username: username, // userName → username 변경
+            message: messageText
         };
 
         sendWebSocketMessage(message);
@@ -446,22 +533,40 @@
         const timestamp = new Date().toLocaleTimeString();
 
         if (messageDto.meetingType === 'JOIN' || messageDto.meetingType === 'LEAVE') {
+            // 시스템 메시지 (입장/퇴장)
             messageDiv.className = 'message system-message';
             messageDiv.innerHTML = `
-                    <div class="timestamp">🔔 시스템 알림</div>
-                    <div class="message-content">${messageDto.message}</div>
+                    <div class="message-bubble">
+                        <strong>${messageDto.username}</strong>님이 ${messageDto.message}
+                    </div>
                 `;
         } else if (messageDto.meetingType === 'TALK') {
-            messageDiv.className = 'message user-message';
-            const messageParts = messageDto.message.split(': ');
-            const username = messageParts[0];
-            const content = messageParts.slice(1).join(': ');
+            // 채팅 메시지
+            const currentUsername = usernameInput.value.trim();
+            const isMyMessage = messageDto.username === currentUsername;
 
-            messageDiv.innerHTML = `
-                    <div class="timestamp">${timestamp}</div>
-                    <div class="username">${username}</div>
-                    <div class="message-content">${content}</div>
-                `;
+            messageDiv.className = `message user-message ${isMyMessage ? 'my-message' : 'other-message'}`;
+
+            if (isMyMessage) {
+                // 내 메시지 (오른쪽 정렬, 시간이 말풍선 왼쪽에)
+                messageDiv.innerHTML = `
+                        <div style="display: flex; align-items: flex-end; justify-content: flex-end;">
+                            <div class="message-time">${timestamp}</div>
+                            <div class="message-bubble">${messageDto.message}</div>
+                        </div>
+                    `;
+            } else {
+                // 다른 사람 메시지 (왼쪽 정렬, 이름과 시간 표시)
+                messageDiv.innerHTML = `
+                        <div class="message-header">
+                            <span class="username">${messageDto.username}</span>
+                        </div>
+                        <div style="display: flex; align-items: flex-end;">
+                            <div class="message-bubble">${messageDto.message}</div>
+                            <div class="message-time">${timestamp}</div>
+                        </div>
+                    `;
+            }
         }
 
         messagesDiv.appendChild(messageDiv);
@@ -473,10 +578,8 @@
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message system-message';
 
-        const timestamp = new Date().toLocaleTimeString();
         messageDiv.innerHTML = `
-                <div class="timestamp">🔧 시스템</div>
-                <div class="message-content">${text}</div>
+                <div class="message-bubble">${text}</div>
             `;
 
         messagesDiv.appendChild(messageDiv);
@@ -501,7 +604,13 @@
 
         currentChatRoomId = null;
         currentRoomSpan.textContent = '없음';
-        currentUserSpan.textContent = '없음';
+        roomCountSpan.textContent = '0명';
+    }
+
+    // 방 인원 수 업데이트
+    function updateRoomCount(count) {
+        roomCountSpan.textContent = `${count}명`;
+        addLog(`👥 현재 방 인원: ${count}명`);
     }
 
     // 로그 추가
@@ -516,7 +625,6 @@
     // 메시지 지우기
     function clearMessages() {
         messagesDiv.innerHTML = '';
-        displayTextMessage('메시지가 지워졌습니다.');
     }
 
     // 로그 지우기
