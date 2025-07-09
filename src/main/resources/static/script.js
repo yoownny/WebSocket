@@ -4,6 +4,7 @@ const MAX_MESSAGE_LENGTH = 200;
 const MAX_CONSECUTIVE_MESSAGES = 50;
 let consecutiveMessageCount = 0;
 let lastMessageSender = null;
+let clientIp = 'unknown'; // 클라이언트 IP 저장
 
 // DOM 요소들
 const statusDiv = document.getElementById('status');
@@ -126,12 +127,12 @@ function connect() {
     }
 
     try {
-        addLog(`🔄 ${username} 이름으로 서버에 연결 시도 중...`);
+        addLog('서버 연결 시도 중...', 'SYSTEM');
         websocket = new WebSocket(serverUrl);
 
         websocket.onopen = function() {
             updateStatus('연결됨 ✅', true);
-            addLog(`✅ WebSocket 연결 성공 (사용자: ${username})`);
+            addLog('WebSocket 연결 성공', 'CONNECT');
 
             connectBtn.disabled = true;
             disconnectBtn.disabled = false;
@@ -143,12 +144,11 @@ function connect() {
 
         websocket.onmessage = function(event) {
             const data = event.data;
-            addLog('📨 수신: ' + data);
 
             // IP 중복 접속 처리
             if (data.includes('다른 곳에서 접속하여') || data.includes('중복 접속')) {
                 alert(`⚠️ 다른 곳에서 같은 IP로 접속하여 현재 연결이 종료됩니다.`);
-                addLog('🚨 IP 중복 접속으로 인한 연결 종료');
+                addLog('IP 중복 접속으로 인한 연결 종료', 'WARNING');
                 return;
             }
 
@@ -156,16 +156,25 @@ function connect() {
             try {
                 const messageData = JSON.parse(data);
 
+                // 서버에서 IP 정보가 오면 저장
+                if (messageData.clientIp) {
+                    clientIp = messageData.clientIp;
+                }
+
                 // 방 인원 수 업데이트 메시지인지 확인
                 if (messageData.type === 'ROOM_COUNT_UPDATE') {
                     updateRoomCount(messageData.count);
+                    addLog('서버 메시지 수신', 'RECEIVE', `방 인원 수 업데이트: ${messageData.count}명`);
                 } else {
                     // 일반 채팅 메시지
                     displayMessage(messageData);
+                    // 받은 메시지 로그
+                    addLog('채팅 메시지 수신', 'CHAT', `발신자: ${messageData.username}, 내용: "${messageData.message}"`);
                 }
             } catch (e) {
                 // 일반 텍스트 메시지 (연결 완료 메시지 등)
                 displayTextMessage(data);
+                addLog('서버 메시지 수신', 'RECEIVE', data);
             }
         };
 
@@ -176,23 +185,23 @@ function connect() {
             updateStatus('연결 끊어짐 ❌', false);
 
             if (code === 1008) { // Policy Violation (IP 중복)
-                addLog('❌ IP 중복 접속으로 인한 연결 종료');
-                displayTextMessage('🚨 다른 곳에서 같은 IP로 접속하여 연결이 종료되었습니다.');
+                addLog('IP 중복 접속으로 인한 연결 종료', 'ERROR');
+                displayTextMessage('다른 곳에서 같은 IP로 접속하여 연결이 종료되었습니다.');
             } else {
-                addLog(`❌ WebSocket 연결 종료 (코드: ${code}, 사유: ${reason})`);
-                displayTextMessage('🔌 서버와의 연결이 끊어졌습니다. 입장했던 모든 채팅방에서 자동으로 퇴장되었습니다.');
+                addLog('WebSocket 연결 종료', 'DISCONNECT', `코드: ${code}, 사유: ${reason}`);
+                displayTextMessage('서버와의 연결이 끊어졌습니다. 입장했던 모든 채팅방에서 자동으로 퇴장되었습니다.');
             }
 
             resetButtons();
         };
 
         websocket.onerror = function(error) {
-            addLog('🚨 WebSocket 오류: ' + error);
+            addLog('WebSocket 오류 발생', 'ERROR', error.toString());
             updateStatus('연결 오류 ⚠️', false);
         };
 
     } catch (error) {
-        addLog('🚨 연결 실패: ' + error.message);
+        addLog('연결 실패', 'ERROR', error.message);
         updateStatus('연결 실패 ❌', false);
     }
 }
@@ -200,8 +209,8 @@ function connect() {
 // WebSocket 연결 해제
 function disconnect() {
     if (websocket) {
-        addLog('🔌 사용자가 연결 해제를 요청했습니다...');
-        displayTextMessage('🔌 연결을 해제합니다. 입장했던 모든 채팅방에서 자동으로 퇴장됩니다.');
+        addLog('사용자가 연결 해제를 요청했습니다', 'DISCONNECT');
+        displayTextMessage('연결을 해제합니다. 입장했던 모든 채팅방에서 자동으로 퇴장됩니다.');
         websocket.close(1000, '사용자 요청으로 연결 해제'); // 정상 종료 코드
     }
 }
@@ -258,7 +267,7 @@ function joinRoom() {
     messageInput.disabled = false;
     sendBtn.disabled = false;
 
-    addLog(`🚪 채팅방 ${chatRoomId}에 입장했습니다.`);
+    addLog(`채팅방 ${chatRoomId}에 입장`, 'JOIN');
 }
 
 // 채팅방 퇴장
@@ -278,7 +287,7 @@ function leaveRoom() {
 
     sendWebSocketMessage(message);
 
-    addLog(`🚪 채팅방 ${currentChatRoomId}에서 퇴장했습니다.`);
+    addLog(`채팅방 ${currentChatRoomId}에서 퇴장`, 'LEAVE');
 
     currentChatRoomId = null;
     currentRoomSpan.textContent = '없음';
@@ -330,14 +339,14 @@ function sendMessage() {
     // 연속 메시지 제한 체크
     if (consecutiveMessageCount > MAX_CONSECUTIVE_MESSAGES) {
         alert(`⚠️ 연속으로 ${MAX_CONSECUTIVE_MESSAGES}개 이상의 메시지를 보냈습니다.\n다른 사용자가 메시지를 보낼 때까지 잠시 기다려주세요!`);
-        addLog(`🚨 연속 메시지 제한: ${consecutiveMessageCount}개 연속 전송 시도`);
+        addLog('연속 메시지 제한 도달', 'WARNING', `연속 ${consecutiveMessageCount}개 전송 시도`);
         return;
     }
 
     // 연속 메시지 경고 (40개 이상일 때)
     if (consecutiveMessageCount >= 40) {
         const remaining = MAX_CONSECUTIVE_MESSAGES - consecutiveMessageCount;
-        addLog(`⚠️ 연속 메시지 경고: ${remaining}개 더 보내면 전송이 제한됩니다.`);
+        addLog('연속 메시지 경고', 'WARNING', `${remaining}개 더 보내면 전송이 제한됩니다`);
     }
 
     const message = {
@@ -348,6 +357,8 @@ function sendMessage() {
     };
 
     sendWebSocketMessage(message);
+    addLog('메시지 전송', 'SEND', `"${messageText}"`);
+
     messageInput.value = '';
     messageInput.focus();
 
@@ -362,9 +373,10 @@ function sendWebSocketMessage(message) {
     if (websocket && websocket.readyState === WebSocket.OPEN) {
         const jsonMessage = JSON.stringify(message);
         websocket.send(jsonMessage);
-        addLog('📤 전송: ' + jsonMessage);
+        addLog('WebSocket 전송', 'WEBSOCKET', jsonMessage);
     } else {
         alert('WebSocket이 연결되지 않았습니다.');
+        addLog('WebSocket 전송 실패', 'ERROR', '연결되지 않음');
     }
 }
 
@@ -377,7 +389,7 @@ function displayMessage(messageDto) {
     // 다른 사용자의 메시지를 받으면 연속 메시지 카운트 리셋
     if (messageDto.meetingType === 'TALK' && messageDto.username !== currentUsername) {
         if (lastMessageSender === currentUsername && consecutiveMessageCount > 0) {
-            addLog(`✅ 다른 사용자가 메시지를 보내서 연속 메시지 카운트가 리셋되었습니다.`);
+            addLog('연속 메시지 카운트 리셋', 'INFO', `다른 사용자(${messageDto.username})가 메시지를 보냄`);
         }
         consecutiveMessageCount = 0;
         lastMessageSender = messageDto.username;
@@ -467,14 +479,92 @@ function resetButtons() {
 // 방 인원 수 업데이트
 function updateRoomCount(count) {
     roomCountSpan.textContent = `${count}명`;
-    addLog(`👥 현재 방 인원: ${count}명`);
 }
 
-// 로그 추가
-function addLog(message) {
+// 개선된 로그 추가 함수
+function addLog(message, type = 'INFO', details = '') {
     const logDiv = document.createElement('div');
     const timestamp = new Date().toLocaleTimeString();
-    logDiv.innerHTML = `<span style="color: #666;">[${timestamp}]</span> ${message}`;
+    const username = usernameInput.value.trim() || '익명';
+
+    // 로그 타입에 따른 스타일링
+    let typeColor = '#666';
+    let typeIcon = '';
+
+    switch(type) {
+        case 'CONNECT':
+            typeColor = '#28a745';
+            typeIcon = '';
+            break;
+        case 'DISCONNECT':
+            typeColor = '#dc3545';
+            typeIcon = '';
+            break;
+        case 'JOIN':
+            typeColor = '#007bff';
+            typeIcon = '';
+            break;
+        case 'LEAVE':
+            typeColor = '#6c757d';
+            typeIcon = '';
+            break;
+        case 'SEND':
+            typeColor = '#17a2b8';
+            typeIcon = '';
+            break;
+        case 'RECEIVE':
+            typeColor = '#28a745';
+            typeIcon = '';
+            break;
+        case 'CHAT':
+            typeColor = '#20c997';
+            typeIcon = '';
+            break;
+        case 'WARNING':
+            typeColor = '#ffc107';
+            typeIcon = '';
+            break;
+        case 'ERROR':
+            typeColor = '#dc3545';
+            typeIcon = '';
+            break;
+        case 'WEBSOCKET':
+            typeColor = '#6610f2';
+            typeIcon = '';
+            break;
+        case 'ROOM_UPDATE':
+            typeColor = '#fd7e14';
+            typeIcon = '';
+            break;
+        case 'SYSTEM':
+            typeColor = '#6c757d';
+            typeIcon = '';
+            break;
+        case 'INFO':
+        default:
+            typeColor = '#17a2b8';
+            typeIcon = '';
+            break;
+    }
+
+    // 사용자 정보 표시 (시스템 메시지가 아닌 경우만)
+    let userInfo = '';
+    if (!['SYSTEM', 'RECEIVE', 'WEBSOCKET'].includes(type)) {
+        userInfo = ` <span style="color: #495057; font-weight: bold;">[${username}]</span>`;
+    }
+
+    logDiv.innerHTML = `
+        <span style="color: #666;">[${timestamp}]</span>
+        <span style="color: #333; font-weight: bold;">[${clientIp}]</span>
+        <span style="color: ${typeColor}; font-weight: bold;">[${type}]</span>
+        ${userInfo}
+        <span>${message}</span>
+        ${details ? `<br><span style="color: #888; font-size: 0.9em; margin-left: 20px;">└─ ${details}</span>` : ''}
+    `;
+
+    logDiv.style.marginBottom = '5px';
+    logDiv.style.fontSize = '0.9em';
+
     logsDiv.appendChild(logDiv);
     logsDiv.scrollTop = logsDiv.scrollHeight;
 }
@@ -482,6 +572,7 @@ function addLog(message) {
 // 메시지 지우기
 function clearMessages() {
     messagesDiv.innerHTML = '';
+    addLog('채팅 메시지 화면을 지웠습니다', 'SYSTEM');
 }
 
 // 로그 지우기
