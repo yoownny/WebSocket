@@ -17,7 +17,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         // 어떤 경로에 어떤 핸들러를 연결할지 설정 정보를 저장
-
         registry.addHandler(webSocketHandler, "/ws/conn")
                 .setAllowedOrigins("*");
     }

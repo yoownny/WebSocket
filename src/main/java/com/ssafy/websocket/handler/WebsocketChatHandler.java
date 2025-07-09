@@ -15,7 +15,6 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component // Spring Bean으로 등록
@@ -25,7 +24,6 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     // Json -> Java 객체 변환 도구
     private final ObjectMapper objectMapper;
 
-    // 사용자별로 고유한 세션 ID가 있음
     // 현재 연결된 모든 사용자들의 세션을 저장하는 집합
     private final Set<WebSocketSession> sessions = new HashSet<>();
 
@@ -35,9 +33,7 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     // 연결
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        log.info("새 연결: ID={}, IP={}",
-                session.getId(),
-                session.getRemoteAddress());
+        log.info("새 연결: ID={}, IP={}", session.getId(), session.getRemoteAddress());
         sessions.add(session); // 새로운 사용자를 접속자 목록에 추가
         session.sendMessage(new TextMessage("WebSocket 연결 완료")); // 연결된 사용자에게 환영 메시지 전송
     }
@@ -46,10 +42,7 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         String payload = message.getPayload(); // 받은 매시지의 실제 내용
-        log.info("메시지 수신: SessionID={}, IP={}, Payload={}",
-                session.getId(),
-                session.getRemoteAddress(),
-                payload);
+        log.info("메시지 수신: SessionID={}, IP={}, Payload={}", session.getId(), session.getRemoteAddress(), payload);
 
         // 클라이언트로부터 받은 메시지를 ChatMessageDto로 변환
         ChatMessageDto chatMessageDto = objectMapper.readValue(payload, ChatMessageDto.class);
@@ -78,6 +71,7 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
             if (roomSessions != null) {
                 roomSessions.remove(session);
             }
+
             log.info("사용자 {}가 채팅방 {}에서 퇴장", chatMessageDto.getUsername(), chatMessageDto.getChatRoomId());
 
             // 방 인원 수 정보를 모든 사용자에게 전송
@@ -100,10 +94,7 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     // 연결 종료
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
-        log.info("연결 종료: ID={}, IP={}, Status={}",
-                session.getId(),
-                session.getRemoteAddress(),
-                status);
+        log.info("연결 종료: ID={}, IP={}, Status={}", session.getId(), session.getRemoteAddress(), status);
         sessions.remove(session); // 접속자 목록에서 해당 사용자 제거
 
         // 모든 채팅방에서 해당 세션 제거하고 인원 수 업데이트

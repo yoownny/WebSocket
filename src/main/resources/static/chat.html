@@ -215,6 +215,16 @@
             border: 2px solid #2196f3;
         }
 
+        .username-required {
+            border: 2px solid #dc3545 !important;
+            background-color: #ffe6e6 !important;
+        }
+
+        .username-input:invalid {
+            border: 2px solid #dc3545;
+            background-color: #ffe6e6;
+        }
+
         .status-info {
             background-color: #f8f9fa;
             padding: 10px;
@@ -248,6 +258,45 @@
             border: 1px solid #bee5eb;
             color: #0c5460;
         }
+
+        .alert-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+
+        .alert-danger {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .char-counter {
+            font-size: 0.8em;
+            color: #666;
+            margin-left: 10px;
+        }
+
+        .char-counter.warning {
+            color: #fd7e14;
+            font-weight: bold;
+        }
+
+        .char-counter.danger {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        .message-input-container {
+            position: relative;
+        }
+
+        .message-length-warning {
+            color: #dc3545;
+            font-size: 0.8em;
+            margin-top: 5px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -257,11 +306,15 @@
 <div class="container">
     <h3>👤 사용자 정보</h3>
     <div class="alert alert-info">
-        💡 채팅을 시작하기 전에 먼저 사용자 이름을 입력해주세요!
+        💡 채팅을 시작하기 전에 먼저 사용자 이름을 입력해주세요!<br>
+        🚫 같은 이름으로는 동시에 하나의 접속만 가능합니다.
     </div>
     <div class="input-group">
-        <label>사용자 이름:</label>
-        <input type="text" id="username" placeholder="이름을 입력하세요 (예: 김철수)" class="username-input" style="flex: 1;">
+        <label>사용자 이름: <span style="color: red;">*필수</span></label>
+        <input type="text" id="username" placeholder="이름을 입력하세요 (예: 김철수)" class="username-input" style="flex: 1;" required>
+    </div>
+    <div class="alert alert-danger" id="usernameError" style="display: none;">
+        ⚠️ 사용자 이름을 반드시 입력해야 서버에 연결할 수 있습니다!
     </div>
 </div>
 
@@ -280,6 +333,9 @@
 <!-- 채팅방 관리 -->
 <div class="container">
     <h3>🏠 채팅방 관리</h3>
+    <div class="alert alert-warning" id="roomWarning" style="display: none;">
+        ⚠️ 현재 다른 채팅방에 입장 중입니다. 새로운 방에 입장하려면 먼저 현재 방에서 퇴장해주세요.
+    </div>
     <div class="input-group">
         <label>채팅방 ID:</label>
         <input type="number" id="chatRoomId" value="1" min="1">
@@ -295,6 +351,9 @@
 <!-- 메시지 -->
 <div class="container">
     <h3>💬 채팅</h3>
+    <div class="alert alert-info">
+        📝 메시지는 최대 200자까지 입력 가능하며, 연속으로 50개 이상 보내면 전송이 제한됩니다.
+    </div>
     <div id="messages" class="messages">
         <div class="message system-message">
             <div class="message-bubble">
@@ -302,9 +361,13 @@
             </div>
         </div>
     </div>
-    <div class="input-group">
-        <input type="text" id="messageInput" placeholder="메시지를 입력하세요..." style="flex: 1;" disabled>
-        <button id="sendBtn" onclick="sendMessage()" disabled>전송</button>
+    <div class="message-input-container">
+        <div class="input-group">
+            <input type="text" id="messageInput" placeholder="메시지를 입력하세요... (최대 200자)" style="flex: 1;" disabled maxlength="200">
+            <span class="char-counter" id="charCounter">0/200</span>
+            <button id="sendBtn" onclick="sendMessage()" disabled>전송</button>
+        </div>
+        <div class="message-length-warning" id="lengthWarning" style="display: none;"></div>
     </div>
     <button onclick="clearMessages()">메시지 지우기</button>
 </div>
@@ -319,6 +382,10 @@
 <script>
     let websocket = null;
     let currentChatRoomId = null;
+    const MAX_MESSAGE_LENGTH = 200;
+    const MAX_CONSECUTIVE_MESSAGES = 50;
+    let consecutiveMessageCount = 0;
+    let lastMessageSender = null;
 
     // DOM 요소들
     const statusDiv = document.getElementById('status');
@@ -333,8 +400,81 @@
     const currentRoomSpan = document.getElementById('currentRoom');
     const roomCountSpan = document.getElementById('roomCount');
     const usernameInput = document.getElementById('username');
+    const charCounter = document.getElementById('charCounter');
+    const lengthWarning = document.getElementById('lengthWarning');
+    const roomWarning = document.getElementById('roomWarning');
+    const usernameError = document.getElementById('usernameError');
+
+    // 메시지 입력 글자 수 카운터
+    messageInput.addEventListener('input', function() {
+        const length = this.value.length;
+        charCounter.textContent = `${length}/${MAX_MESSAGE_LENGTH}`;
+
+        // 글자 수에 따른 색상 변경
+        if (length >= MAX_MESSAGE_LENGTH) {
+            charCounter.className = 'char-counter danger';
+            lengthWarning.textContent = '메시지가 최대 길이에 도달했습니다.';
+            lengthWarning.style.display = 'block';
+        } else if (length >= MAX_MESSAGE_LENGTH * 0.8) {
+            charCounter.className = 'char-counter warning';
+            lengthWarning.style.display = 'none';
+        } else {
+            charCounter.className = 'char-counter';
+            lengthWarning.style.display = 'none';
+        }
+    });
 
     // 엔터키로 메시지 전송
+    messageInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter' && !sendBtn.disabled) {
+            sendMessage();
+        }
+    });
+
+    // 사용자 이름 유효성 검사
+    function validateUsername(username) {
+        // 공백 제거 후 체크
+        username = username.trim();
+
+        if (!username) {
+            return { valid: false, message: '사용자 이름을 입력해주세요.' };
+        }
+
+        if (username.length < 2) {
+            return { valid: false, message: '사용자 이름은 최소 2글자 이상이어야 합니다.' };
+        }
+
+        if (username.length > 20) {
+            return { valid: false, message: '사용자 이름은 최대 20글자까지 가능합니다.' };
+        }
+
+        // 특수문자 체크 (한글, 영문, 숫자, 일부 특수문자만 허용)
+        const validPattern = /^[가-힣a-zA-Z0-9\s_-]+$/;
+        if (!validPattern.test(username)) {
+            return { valid: false, message: '사용자 이름에는 한글, 영문, 숫자, 공백, _, - 만 사용 가능합니다.' };
+        }
+
+        return { valid: true, message: '' };
+    }
+
+    // 사용자 이름 입력 시 실시간 검증
+    usernameInput.addEventListener('input', function() {
+        const username = this.value.trim();
+        const validation = validateUsername(username);
+
+        if (!validation.valid && username.length > 0) {
+            this.classList.add('username-required');
+            usernameError.textContent = '⚠️ ' + validation.message;
+            usernameError.style.display = 'block';
+        } else if (validation.valid) {
+            this.classList.remove('username-required');
+            usernameError.style.display = 'none';
+        } else {
+            this.classList.add('username-required');
+            usernameError.textContent = '⚠️ 사용자 이름을 반드시 입력해야 서버에 연결할 수 있습니다!';
+            usernameError.style.display = 'block';
+        }
+    });
     messageInput.addEventListener('keypress', function(e) {
         if (e.key === 'Enter' && !sendBtn.disabled) {
             sendMessage();
@@ -353,13 +493,24 @@
         const serverUrl = document.getElementById('serverUrl').value.trim();
         const username = usernameInput.value.trim();
 
-        if (!username) {
-            alert('먼저 사용자 이름을 입력해주세요!');
+        // 사용자 이름 검증
+        const validation = validateUsername(username);
+        if (!validation.valid) {
+            usernameInput.classList.add('username-required');
+            usernameError.textContent = '⚠️ ' + validation.message;
+            usernameError.style.display = 'block';
             usernameInput.focus();
             return;
         }
 
+        // 서버 URL 검증
+        if (!serverUrl) {
+            alert('서버 URL을 입력해주세요!');
+            return;
+        }
+
         try {
+            addLog(`🔄 ${username} 이름으로 서버에 연결 시도 중...`);
             websocket = new WebSocket(serverUrl);
 
             websocket.onopen = function() {
@@ -370,11 +521,23 @@
                 disconnectBtn.disabled = false;
                 joinBtn.disabled = false;
                 usernameInput.disabled = true; // 연결 후 이름 변경 방지
+                usernameError.style.display = 'none';
+                usernameInput.classList.remove('username-required');
             };
 
             websocket.onmessage = function(event) {
                 const data = event.data;
                 addLog('📨 수신: ' + data);
+
+                // 중복 접속 체크 메시지 처리
+                if (data.includes('이미 사용 중인 이름') || data.includes('duplicate') || data.includes('already connected')) {
+                    alert(`⚠️ "${username}" 이름은 이미 사용 중입니다.\n다른 이름을 사용해주세요.`);
+                    disconnect();
+                    usernameInput.disabled = false;
+                    usernameInput.value = '';
+                    usernameInput.focus();
+                    return;
+                }
 
                 // JSON 메시지인지 확인
                 try {
@@ -432,16 +595,32 @@
             return;
         }
 
-        // 방이 바뀔 때마다 채팅 내용 지우기
-        if (currentChatRoomId !== chatRoomId) {
-            clearMessages();
-            displayTextMessage(`채팅방 ${chatRoomId}에 입장했습니다.`);
+        // 이미 다른 방에 입장한 상태인지 확인
+        if (currentChatRoomId !== null && currentChatRoomId !== chatRoomId) {
+            alert(`현재 채팅방 ${currentChatRoomId}에 입장 중입니다.\n새로운 방에 입장하려면 먼저 현재 방에서 퇴장해주세요.`);
+            roomWarning.style.display = 'block';
+            return;
         }
+
+        // 같은 방에 다시 입장하려는 경우 방지
+        if (currentChatRoomId === chatRoomId) {
+            alert(`이미 채팅방 ${chatRoomId}에 입장해 있습니다.`);
+            return;
+        }
+
+        // 경고 메시지 숨기기
+        roomWarning.style.display = 'none';
+
+        // 새로운 방 입장 시 채팅 내용 지우기 및 연속 메시지 카운트 리셋
+        clearMessages();
+        displayTextMessage(`채팅방 ${chatRoomId}에 입장했습니다.`);
+        consecutiveMessageCount = 0;
+        lastMessageSender = null;
 
         const message = {
             meetingType: 'JOIN',
             chatRoomId: chatRoomId,
-            username: username, // userName → username 변경 (백엔드 수정에 맞춤)
+            username: username,
             message: '입장했습니다'
         };
 
@@ -467,7 +646,7 @@
         const message = {
             meetingType: 'LEAVE',
             chatRoomId: currentChatRoomId,
-            username: username, // userName → username 변경
+            username: username,
             message: '퇴장했습니다'
         };
 
@@ -482,6 +661,11 @@
         leaveBtn.disabled = true;
         messageInput.disabled = true;
         sendBtn.disabled = true;
+
+        // 경고 메시지 숨기기 및 연속 메시지 카운트 리셋
+        roomWarning.style.display = 'none';
+        consecutiveMessageCount = 0;
+        lastMessageSender = null;
     }
 
     // 메시지 전송
@@ -491,6 +675,11 @@
 
         if (!messageText) {
             alert('메시지를 입력하세요.');
+            return;
+        }
+
+        if (messageText.length > MAX_MESSAGE_LENGTH) {
+            alert(`메시지가 너무 깁니다. 최대 ${MAX_MESSAGE_LENGTH}자까지 입력 가능합니다.`);
             return;
         }
 
@@ -504,16 +693,42 @@
             return;
         }
 
+        // 연속 메시지 체크
+        if (lastMessageSender === username) {
+            consecutiveMessageCount++;
+        } else {
+            consecutiveMessageCount = 1;
+            lastMessageSender = username;
+        }
+
+        // 연속 메시지 제한 체크
+        if (consecutiveMessageCount > MAX_CONSECUTIVE_MESSAGES) {
+            alert(`⚠️ 연속으로 ${MAX_CONSECUTIVE_MESSAGES}개 이상의 메시지를 보냈습니다.\n다른 사용자가 메시지를 보낼 때까지 잠시 기다려주세요!`);
+            addLog(`🚨 연속 메시지 제한: ${consecutiveMessageCount}개 연속 전송 시도`);
+            return;
+        }
+
+        // 연속 메시지 경고 (40개 이상일 때)
+        if (consecutiveMessageCount >= 40) {
+            const remaining = MAX_CONSECUTIVE_MESSAGES - consecutiveMessageCount;
+            addLog(`⚠️ 연속 메시지 경고: ${remaining}개 더 보내면 전송이 제한됩니다.`);
+        }
+
         const message = {
             meetingType: 'TALK',
             chatRoomId: currentChatRoomId,
-            username: username, // userName → username 변경
+            username: username,
             message: messageText
         };
 
         sendWebSocketMessage(message);
         messageInput.value = '';
         messageInput.focus();
+
+        // 글자 수 카운터 리셋
+        charCounter.textContent = '0/200';
+        charCounter.className = 'char-counter';
+        lengthWarning.style.display = 'none';
     }
 
     // WebSocket 메시지 전송
@@ -531,6 +746,16 @@
     function displayMessage(messageDto) {
         const messageDiv = document.createElement('div');
         const timestamp = new Date().toLocaleTimeString();
+        const currentUsername = usernameInput.value.trim();
+
+        // 다른 사용자의 메시지를 받으면 연속 메시지 카운트 리셋
+        if (messageDto.meetingType === 'TALK' && messageDto.username !== currentUsername) {
+            if (lastMessageSender === currentUsername && consecutiveMessageCount > 0) {
+                addLog(`✅ 다른 사용자가 메시지를 보내서 연속 메시지 카운트가 리셋되었습니다.`);
+            }
+            consecutiveMessageCount = 0;
+            lastMessageSender = messageDto.username;
+        }
 
         if (messageDto.meetingType === 'JOIN' || messageDto.meetingType === 'LEAVE') {
             // 시스템 메시지 (입장/퇴장)
@@ -542,7 +767,6 @@
                 `;
         } else if (messageDto.meetingType === 'TALK') {
             // 채팅 메시지
-            const currentUsername = usernameInput.value.trim();
             const isMyMessage = messageDto.username === currentUsername;
 
             messageDiv.className = `message user-message ${isMyMessage ? 'my-message' : 'other-message'}`;
@@ -605,6 +829,13 @@
         currentChatRoomId = null;
         currentRoomSpan.textContent = '없음';
         roomCountSpan.textContent = '0명';
+        roomWarning.style.display = 'none';
+        usernameError.style.display = 'none';
+        usernameInput.classList.remove('username-required');
+
+        // 연속 메시지 카운트 리셋
+        consecutiveMessageCount = 0;
+        lastMessageSender = null;
     }
 
     // 방 인원 수 업데이트
