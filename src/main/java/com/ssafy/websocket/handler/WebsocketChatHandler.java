@@ -56,10 +56,12 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         String payload = message.getPayload(); // 받은 매시지의 실제 내용
+        String clientIp = sessionManager.getClientIp(session);
         log.info("메시지 수신: SessionID={}, IP={}, Payload={}", session.getId(), session.getRemoteAddress(), payload);
 
         // 클라이언트로부터 받은 메시지를 ChatMessageDto로 변환
         ChatMessageDto chatMessageDto = objectMapper.readValue(payload, ChatMessageDto.class);
+        chatMessageDto.setClientIp(clientIp);
         log.info("chatMessageDto {}", chatMessageDto.toString());
 
         // 메시지 타입에 따른 분기
@@ -82,11 +84,11 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
             // 채팅방에서 세션 제거
             Set<WebSocketSession> roomSessions = chatRoomSessionMap.get(chatMessageDto.getChatRoomId());
 
-            // 방 인원 수 계산
-            int roomCount = roomSessions.size();
-
             if (roomSessions != null) {
                 roomSessions.remove(session);
+
+                // 방 인원 수 계산
+                int roomCount = roomSessions.size();
 
                 log.info("사용자 {}가 채팅방 {}에서 퇴장", chatMessageDto.getUsername(), chatMessageDto.getChatRoomId());
 
@@ -114,14 +116,35 @@ public class WebsocketChatHandler extends TextWebSocketHandler {
         log.info("연결 종료: ID={}, IP={}, Status={}", session.getId(), session.getRemoteAddress(), status);
         sessions.remove(session); // 접속자 목록에서 해당 사용자 제거
 
-        // 모든 채팅방에서 해당 세션 제거하고 인원 수 업데이트
+        String clientIp = sessionManager.getClientIp(session);
+        String username = sessionManager.getUsername(session);
+
+        // 모든 채팅방에서 해당 세션 제거하고 퇴장 메시지 전송
         for (Map.Entry<Long, Set<WebSocketSession>> entry : chatRoomSessionMap.entrySet()) {
             Set<WebSocketSession> roomSessions = entry.getValue();
             if (roomSessions.remove(session)) {
-                // 해당 방에서 세션이 제거되었으면 인원 수 업데이트 전송
+                Long chatRoomId = entry.getKey();
+
+                // 퇴장 메시지 생성 및 전송 (추가)
+                if (username != null) {
+                    ChatMessageDto leaveMessage = ChatMessageDto.builder()
+                            .meetingType(MeetingType.LEAVE)
+                            .chatRoomId(chatRoomId)
+                            .username(username)
+                            .message("연결이 끊어져 퇴장했습니다")
+                            .clientIp(clientIp)
+                            .build();
+
+                    // 해당 방의 남은 사용자들에게 퇴장 메시지 전송
+                    for (WebSocketSession remainingSession : roomSessions) {
+                        remainingSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(leaveMessage)));
+                    }
+                }
+
                 int roomCount = roomSessions.size();
-                log.info("연결 종료로 인한 방 인원 변경 - Room: {}, 현재 인원: {}명", entry.getKey(), roomCount);
-                sendRoomCountUpdate(entry.getKey(), roomCount);
+                log.info("연결 종료로 인한 방 퇴장 - Room: {}, Username: {}, 현재 인원: {}명",
+                        chatRoomId, username, roomCount);
+                sendRoomCountUpdate(chatRoomId, roomCount);
             }
         }
         sessionManager.cleanupSession(session);

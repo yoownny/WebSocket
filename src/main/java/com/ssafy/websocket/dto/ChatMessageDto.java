@@ -16,6 +16,7 @@ public class ChatMessageDto {
     private Long chatRoomId; // 방 번호
     private String username; // 사용자 이름
     private String message; // 메시지
+    private String clientIp; // IP
 
     // 메시지 타입 : 입장, 채팅, 퇴장
     public enum MeetingType {

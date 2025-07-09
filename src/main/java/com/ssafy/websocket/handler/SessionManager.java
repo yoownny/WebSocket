@@ -48,8 +48,7 @@ public class SessionManager {
         return removedSession;
     }
 
-    // IP 주소 조회
-    private String getClientIp(WebSocketSession session) {
+    public String getClientIp(WebSocketSession session) {
         // 세션에 이미 저장된 IP가 있으면 반환
         String storedIp = sessionIsMap.get(session);
         if(storedIp != null) {
