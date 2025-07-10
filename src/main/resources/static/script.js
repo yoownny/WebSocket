@@ -24,6 +24,13 @@ const lengthWarning = document.getElementById('lengthWarning');
 const roomWarning = document.getElementById('roomWarning');
 const usernameError = document.getElementById('usernameError');
 
+// ⭐ XSS 방지를 위한 HTML 이스케이프 함수
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // DOM 로드 완료 시 이벤트 리스너 등록
 document.addEventListener('DOMContentLoaded', function() {
     // 메시지 입력 글자 수 카운터
@@ -380,7 +387,7 @@ function sendWebSocketMessage(message) {
     }
 }
 
-// 채팅 메시지 표시
+// ⭐ XSS 보안이 강화된 채팅 메시지 표시 함수
 function displayMessage(messageDto) {
     const messageDiv = document.createElement('div');
     const timestamp = new Date().toLocaleTimeString();
@@ -396,15 +403,15 @@ function displayMessage(messageDto) {
     }
 
     if (messageDto.meetingType === 'JOIN' || messageDto.meetingType === 'LEAVE') {
-        // 시스템 메시지 (입장/퇴장)
+        // 시스템 메시지 (입장/퇴장) - 사용자명과 메시지 이스케이프
         messageDiv.className = 'message system-message';
         messageDiv.innerHTML = `
                 <div class="message-bubble">
-                    <strong>${messageDto.username}</strong>님이 ${messageDto.message}
+                    <strong>${escapeHtml(messageDto.username)}</strong>님이 ${escapeHtml(messageDto.message)}
                 </div>
             `;
     } else if (messageDto.meetingType === 'TALK') {
-        // 채팅 메시지
+        // 채팅 메시지 - 사용자명과 메시지 내용 이스케이프
         const isMyMessage = messageDto.username === currentUsername;
 
         messageDiv.className = `message user-message ${isMyMessage ? 'my-message' : 'other-message'}`;
@@ -414,17 +421,17 @@ function displayMessage(messageDto) {
             messageDiv.innerHTML = `
                     <div style="display: flex; align-items: flex-end; justify-content: flex-end;">
                         <div class="message-time">${timestamp}</div>
-                        <div class="message-bubble">${messageDto.message}</div>
+                        <div class="message-bubble">${escapeHtml(messageDto.message)}</div>
                     </div>
                 `;
         } else {
             // 다른 사람 메시지 (왼쪽 정렬, 이름과 시간 표시)
             messageDiv.innerHTML = `
                     <div class="message-header">
-                        <span class="username">${messageDto.username}</span>
+                        <span class="username">${escapeHtml(messageDto.username)}</span>
                     </div>
                     <div style="display: flex; align-items: flex-end;">
-                        <div class="message-bubble">${messageDto.message}</div>
+                        <div class="message-bubble">${escapeHtml(messageDto.message)}</div>
                         <div class="message-time">${timestamp}</div>
                     </div>
                 `;
@@ -435,13 +442,13 @@ function displayMessage(messageDto) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// 일반 텍스트 메시지 표시
+// ⭐ XSS 보안이 강화된 일반 텍스트 메시지 표시 함수
 function displayTextMessage(text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message system-message';
 
     messageDiv.innerHTML = `
-            <div class="message-bubble">${text}</div>
+            <div class="message-bubble">${escapeHtml(text)}</div>
         `;
 
     messagesDiv.appendChild(messageDiv);
@@ -481,7 +488,7 @@ function updateRoomCount(count) {
     roomCountSpan.textContent = `${count}명`;
 }
 
-// 개선된 로그 추가 함수
+// ⭐ XSS 보안이 강화된 로그 추가 함수
 function addLog(message, type = 'INFO', details = '') {
     const logDiv = document.createElement('div');
     const timestamp = new Date().toLocaleTimeString();
@@ -550,7 +557,7 @@ function addLog(message, type = 'INFO', details = '') {
     // 사용자 정보 표시 (시스템 메시지가 아닌 경우만)
     let userInfo = '';
     if (!['SYSTEM', 'RECEIVE', 'WEBSOCKET'].includes(type)) {
-        userInfo = ` <span style="color: #495057; font-weight: bold;">[${username}]</span>`;
+        userInfo = ` <span style="color: #495057; font-weight: bold;">[${escapeHtml(username)}]</span>`;
     }
 
     logDiv.innerHTML = `
@@ -558,8 +565,8 @@ function addLog(message, type = 'INFO', details = '') {
         <span style="color: #333; font-weight: bold;">[${clientIp}]</span>
         <span style="color: ${typeColor}; font-weight: bold;">[${type}]</span>
         ${userInfo}
-        <span>${message}</span>
-        ${details ? `<br><span style="color: #888; font-size: 0.9em; margin-left: 20px;">└─ ${details}</span>` : ''}
+        <span>${escapeHtml(message)}</span>
+        ${details ? `<br><span style="color: #888; font-size: 0.9em; margin-left: 20px;">└─ ${escapeHtml(details)}</span>` : ''}
     `;
 
     logDiv.style.marginBottom = '5px';
