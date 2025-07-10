@@ -1,6 +1,6 @@
-# 🚀 WebSocket 실시간 채팅 애플리케이션
+# 🚀 WebSocket 실시간 채팅 시스템
 
-Spring Boot와 WebSocket을 활용한 실시간 멀티룸 채팅 웹페이지입니다.
+Spring Boot와 WebSocket을 활용한 실시간 멀티룸 채팅 시스템입니다.
 
 ## 📋 목차
 - [프로젝트 개요](#-프로젝트-개요)
